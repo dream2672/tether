@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { historySnapshotLooksOlder } from '../src/components/chats/chat-utils.js';
-import type { MessageItem } from '../src/components/chats/chat-types.js';
+import { historySnapshotLooksOlder } from '../src/components/chats/model/chat-utils.js';
+import type { MessageItem } from '../src/components/chats/model/chat-types.js';
 
 function user(id: string, content: string): MessageItem {
   return { kind: 'user', id, content, ts: 1 };
@@ -32,4 +32,3 @@ test('historySnapshotLooksOlder: allows completed history to close a longer catc
 
   assert.equal(historySnapshotLooksOlder(current, snapshot), false);
 });
-

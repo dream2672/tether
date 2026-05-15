@@ -130,3 +130,13 @@ export function shouldStartRestore(input: {
 }): boolean {
   return Boolean(input.authReady && input.metadataReady !== false && input.sessionId);
 }
+
+export function shouldApplyGatewayUnavailable(input: {
+  activeSessionId: string | undefined;
+  frameSessionId: string | undefined;
+}): boolean {
+  return input.frameSessionId === undefined || shouldAcceptLiveFrame({
+    activeSessionId: input.activeSessionId,
+    frameSessionId: input.frameSessionId
+  });
+}

@@ -6,8 +6,8 @@ import {
   drainBufferedEvents,
   isRestoreBufferDrained,
   isRestoreBufferOverflowed
-} from '../src/components/chats/chat-restore-buffer.js';
-import type { ChatStreamEvent } from '../src/components/chats/chat-event-reducer.js';
+} from '../src/components/chats/flow/chat-restore-buffer.js';
+import type { ChatStreamEvent } from '../src/components/chats/events/chat-event-reducer.js';
 
 function delta(eventSeq: number, text = 'x'): ChatStreamEvent {
   return { type: 'agent.delta', eventSeq, turnId: 'turn-a', text, provider: 'claude' };

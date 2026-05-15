@@ -22,7 +22,7 @@
 | 新增或调整 `components/` 目录分层 | 本文「目录规范」 |
 | 新增基础 UI 组件或 token 使用约束 | `../../packages/design` / `../../packages/theme` 相关文档 |
 | 新增或修改 Chat 事件时序、Create/Restore flow、reducer/mapper/buffer | 本文「Chat 时序规范」和相关单测 |
-| 新增或修改 chat-markdown / chat-code-block 样式 | `src/components/chats/chat-markdown.css` |
+| 新增或修改 chat-markdown / chat-code-block 样式 | `src/components/chats/messages/chat-markdown.css` |
 | 发现新的 Web 反模式 | 本文「反模式速查」 |
 
 不需要回写本文的内容：
@@ -72,40 +72,46 @@ src/components/
     use-relay-client.ts              useRelayClient() hook
   chats/                             Chat 领域 UI、结构化事件合并、Create/Restore 时序
     chat-panel.tsx                   Chat 工作区生产编排和 UI 接线
-    chat-header.tsx                  Chat 顶部栏
-    chat-message-list.tsx            消息列表容器
-    chat-composer.tsx                输入框、发送按钮、slash menu 接线
-    new-chat-surface.tsx             空 session / 新建 chat surface
     app-sidebar.tsx                  旧 Sidebar（过渡期保留，逐步迁到 workbench/）
-    gateway-selector.tsx             Gateway 选择器
-    slash-command-menu.tsx           Slash command 菜单 UI
-    slash-commands.ts                Slash command 定义
-    use-slash-menu.ts                Slash command 交互 hook
-    notification-bell.tsx            通知入口
-    model-avatar.tsx                 模型头像
-    result-card.tsx                  结果卡片
-    chat-session-status-popover.tsx  当前 chat session 状态浮层
-    session-switch-guards.ts         切换 session 时的遗留 guard 工具
-    chat-data.ts                     Chat HTTP snapshot / catch-up 请求
-    chat-flow-types.ts               Chat event、snapshot、restore attempt 类型
-    chat-event-reducer.ts            结构化事件 -> MessageItem 的纯 reducer
-    chat-event-mappers.ts            Relay / Server 原始 frame -> Chat event
-    chat-restore-buffer.ts           Restore 期间 live event buffer
-    chat-restore-plan.ts             进入、切换、重连时的恢复计划
-    chat-session-guards.ts           sessionId、attempt、ack 异步保护
-    chat-create-flow.ts              clientRequestId optimistic turn 生成/合并/回滚
-    chat-types.ts                    Chat UI 消息类型
-    chat-utils.ts                    Chat UI 纯工具函数
-    chat-markdown.css                Markdown 和代码块样式事实源
+    composer/                        输入框、slash command UI 和交互
+      chat-composer.tsx              输入框、发送按钮、session 状态浮层接线
+      slash-command-menu.tsx         Slash command 菜单 UI
+      slash-commands.ts              Slash command 定义和 localStorage 使用统计
+      use-slash-menu.ts              Slash command 交互 hook
+    data/                            Chat HTTP 数据请求和响应类型
+      chat-data.ts                   Chat session / snapshot / catch-up 请求
+    events/                          结构化事件类型、映射和 reducer
+      chat-flow-types.ts             Chat event、snapshot、restore attempt 类型
+      chat-event-reducer.ts          结构化事件 -> MessageItem 的纯 reducer
+      chat-event-mappers.ts          Relay / Server 原始 frame -> Chat event
+    flow/                            Create/Restore/session guard 纯逻辑
+      chat-create-flow.ts            clientRequestId optimistic turn 生成/合并/回滚
+      chat-restore-buffer.ts         Restore 期间 live event buffer
+      chat-restore-plan.ts           进入、切换、重连时的恢复计划
+      chat-session-guards.ts         sessionId、attempt、ack 异步保护
+      session-switch-guards.ts       切换 session 时的遗留 guard 工具
     messages/                        消息气泡和卡片组件
       chat-bubble-agent.tsx
       chat-bubble-user.tsx
+      chat-markdown.css              Markdown 和代码块样式事实源
       discussion-choice-cards.tsx
+      model-avatar.tsx               模型头像
       permission-prompt.tsx
+      result-card.tsx                结果卡片
       system-message.tsx
       tool-card.tsx
       streaming-cursor.tsx
       thinking-dots.tsx
+    model/                           Chat UI 类型和展示工具函数
+      chat-types.ts                  Chat UI 消息类型
+      chat-utils.ts                  Chat UI 纯工具函数
+    shell/                           Chat 页面壳、列表编排和状态控件
+      chat-header.tsx                Chat 顶部栏
+      chat-message-list.tsx          消息列表容器
+      chat-session-status-popover.tsx 当前 chat session 状态浮层
+      gateway-selector.tsx           Gateway 选择器
+      new-chat-surface.tsx           空 session / 新建 chat surface
+      notification-bell.tsx          通知入口
   terminal/                          Terminal 可嵌入面板
     terminal-pane.tsx                xterm 初始化、output 写入、resize、control/observe
     terminal-session-picker.tsx      选择 running session 的选择器
@@ -164,8 +170,14 @@ test/
 
 - `components/workbench/`：三栏布局、统一 Sidebar、session list/actions、连接状态。不放 chat 消息或 terminal output 业务逻辑。
 - `components/relay/`：Relay WS transport，只暴露连接能力、在线快照和 frame fan-out。不理解 chat message 或 terminal output。
-- `components/chats/`：Chat 领域 UI、结构化事件合并、Create/Restore 时序。不处理 terminal 输出，不拥有 Relay WS 连接。
-- `components/chats/messages/`：消息气泡和卡片，不依赖 relay 或路由。
+- `components/chats/`：Chat 领域根目录，只保留 `chat-panel.tsx` 这种生产编排入口和过渡期入口文件；新增文件必须优先放入下列子目录。
+- `components/chats/composer/`：输入框、slash command 菜单、slash command hook 和本地使用统计。不放事件 reducer、HTTP 请求或消息气泡。
+- `components/chats/data/`：Chat HTTP snapshot / catch-up / session list 请求和响应类型。不放 React 组件。
+- `components/chats/events/`：结构化事件类型、mapper、reducer。不依赖 React 组件，不读取 DOM / localStorage。
+- `components/chats/flow/`：Create/Restore flow、buffer、guard、plan 等纯逻辑。不依赖 React 组件，不发 HTTP 请求。
+- `components/chats/messages/`：消息气泡、Markdown 渲染、模型头像、结果卡片、tool/permission/system 卡片。不依赖 relay 或路由。
+- `components/chats/model/`：Chat UI 类型和展示工具函数。不放副作用逻辑；如果要访问 localStorage、HTTP 或 relay，应放到更具体目录。
+- `components/chats/shell/`：Chat 页面壳、列表编排、顶部栏、Gateway 选择器、通知入口和状态浮层。不放 reducer、mapper 或 Create/Restore guard。
 - `components/terminal/`：可嵌入 terminal 面板。不处理 chat message。
 - `components/session/`：旧整页 PTY surface，过渡期保留，新功能优先用 `terminal/terminal-pane.tsx`。
 - `hooks/terminal/`：terminal runtime 状态，不处理 chat。
@@ -262,30 +274,37 @@ Chat 消息必须以结构化事件为事实源。Web 侧只能按 `clientReques
 
 ### Restore Flow
 
-进入、切换或重连 chat session 时，恢复流程必须先拿到 live 订阅，再补 snapshot 和
-catch-up，避免 `/messages` 请求期间漏事件：
+进入、切换或重连 chat session 时，Server snapshot/catch-up path 必须先行启动，
+不能被 live subscribe 或 `subscription.ack` 阻塞。Live subscribe path 只负责实时增强；
+两条路径最终通过 reducer 按 `eventSeq` 去重合流：
 
 1. 切换 session 前释放旧 `chat:${sessionId}` owner。
 2. 为本轮恢复创建 restore attempt 和 buffer。
-3. 对目标 session 调 `subscribe(... after: 0)`，等待 `subscription.ack`。
-4. ack 之后到 snapshot 完成之前收到的 live 结构化事件只进入 buffer，不直接改 UI。
-5. 请求 `/api/chat-sessions/:sessionId/messages`，读取 messages 和 `snapshotEventSeq`。
-6. 请求 `/api/chat-sessions/:sessionId/events?after=snapshotEventSeq` 拉取结构化 catch-up。
-7. 将 catch-up 和 buffer 内事件按 `eventSeq ASC` 去重后交给 reducer。
-8. buffer drain 后，本轮 attempt 仍有效的 live 事件才可直接进入 reducer。
-9. snapshot 或 catch-up 失败时，不清空当前已有消息；显示 restore error / retry 状态。
+3. 立即请求 `/api/server/chat-sessions/:sessionId/messages`，读取 messages 和 `snapshotEventSeq`。
+4. 请求 `/api/server/chat-sessions/:sessionId/events?after=snapshotEventSeq` 拉取结构化 catch-up。
+5. 同时或随后对目标 session 调 `subscribe(... after: 0)`，等待 `subscription.ack`。
+6. `subscription.ack` 只表示 live subscribe 已生效，不再决定是否拉 snapshot。
+7. snapshot 完成之前收到的 live 结构化事件只进入 buffer，不直接改 UI。
+8. 将 catch-up 和 buffer 内事件按 `eventSeq ASC` 去重后交给 reducer。
+9. buffer drain 后，本轮 attempt 仍有效的 live 事件才可直接进入 reducer。
+10. snapshot 或 catch-up 失败时，不清空当前已有消息；显示 restore error / retry 状态。
+
+`subscribe(... after: 0)` 是有意保留：这样 live path 不需要等待 Server snapshot
+返回后才启动，避免重新引入串行依赖。在线 Gateway 下可能收到 `snapshotEventSeq`
+之前的旧事件，必须由 reducer 的 `eventSeq` 去重丢弃；禁止在 `chat-panel.tsx` 手工
+append 这类 live/catch-up 消息。
 
 ### 文件职责
 
-- `chat-flow-types.ts`：Chat event、snapshot、restore attempt 等类型。
-- `chat-event-reducer.ts`：结构化事件到 `MessageItem` 的纯 reducer；负责排序、去重、
+- `events/chat-flow-types.ts`：Chat event、snapshot、restore attempt 等类型。
+- `events/chat-event-reducer.ts`：结构化事件到 `MessageItem` 的纯 reducer；负责排序、去重、
   completed turn gate。
-- `chat-event-mappers.ts`：Relay / Server 原始 frame 到 Chat event 的映射。
-- `chat-restore-buffer.ts`：Restore 期间 live event buffer。
-- `chat-restore-plan.ts`：进入、切换、重连时的恢复计划纯函数。
-- `chat-session-guards.ts`：sessionId、attempt、ack 等异步保护。
-- `chat-create-flow.ts`：`clientRequestId` optimistic turn 的创建、合并和失败回滚。
-- `chat-data.ts`：HTTP snapshot / catch-up 请求封装。
+- `events/chat-event-mappers.ts`：Relay / Server 原始 frame 到 Chat event 的映射。
+- `flow/chat-restore-buffer.ts`：Restore 期间 live event buffer。
+- `flow/chat-restore-plan.ts`：进入、切换、重连时的恢复计划纯函数。
+- `flow/chat-session-guards.ts`：sessionId、attempt、ack 等异步保护。
+- `flow/chat-create-flow.ts`：`clientRequestId` optimistic turn 的创建、合并和失败回滚。
+- `data/chat-data.ts`：HTTP snapshot / catch-up 请求封装。
 - `chat-panel.tsx`：生产编排和 UI 接线，不承载可单测的 reducer/mapper 细节。
 
 ### 禁止回退的旧做法
@@ -313,7 +332,7 @@ catch-up，避免 `/messages` 请求期间漏事件：
 聊天气泡内的 Markdown 渲染和代码块所有 CSS 统一写入：
 
 ```
-src/components/chats/chat-markdown.css
+src/components/chats/messages/chat-markdown.css
 ```
 
 该文件在 `src/styles.css` 顶部通过 `@import` 引入，**禁止**把 `.chat-markdown`、
@@ -324,9 +343,9 @@ src/components/chats/chat-markdown.css
 
 | 样式范围 | 写入位置 |
 | --- | --- |
-| Markdown 内 `p` / `ul` / `ol` / `li` / `hr` / `h*` / `a` 等 prose 覆盖 | `chat-markdown.css` |
-| 代码块容器、header、copy 按钮、pre/code 颜色 | `chat-markdown.css` |
-| hljs token 亮色/暗色 overrides | `chat-markdown.css` |
+| Markdown 内 `p` / `ul` / `ol` / `li` / `hr` / `h*` / `a` 等 prose 覆盖 | `messages/chat-markdown.css` |
+| 代码块容器、header、copy 按钮、pre/code 颜色 | `messages/chat-markdown.css` |
+| hljs token 亮色/暗色 overrides | `messages/chat-markdown.css` |
 | 其他页面级、全局布局样式 | `styles.css` |
 
 ## Token 与样式规范
@@ -403,10 +422,10 @@ src/components/chats/chat-markdown.css
 | 页面层重复实现基础控件 | 用 `@tether/design` |
 | 大面积品牌绿背景/阴影 | 只在主操作和状态锚点使用品牌信号 |
 | 宽屏登录表单铺满 | 走 `WebAuthShell` 固定卡片宽度 |
-| 把 `.chat-markdown` / `.chat-code-*` 样式写进 `styles.css` | 统一写入 `src/components/chats/chat-markdown.css` |
+| 把 `.chat-markdown` / `.chat-code-*` 样式写进 `styles.css` | 统一写入 `src/components/chats/messages/chat-markdown.css` |
 | Chat 组件或 Terminal 组件自建 Relay WS 连接 | 通过 `useRelayClient()` 共享 WorkbenchLayout 的连接 |
 | Chat 用文本内容、最后一个 assistant 气泡或历史快照新旧猜测合并消息 | 用 `clientRequestId` / `turnId` / `eventSeq` |
-| Restore snapshot 返回前直接 apply live chat 事件 | ack 后先 buffer，snapshot + catch-up 完成后按 `eventSeq ASC` drain |
+| Restore snapshot 返回前直接 apply live chat 事件 | 先 buffer，snapshot + catch-up 完成后按 `eventSeq ASC` drain |
 | 用 `gateway.chat-catchup` blob 写 streaming assistant | 只消费 structured catch-up events |
 | 重新引入 `lastDeltaEventIdRef` / `currentAgentIdRef` / `historySnapshotLooksOlder()` | 保持 reducer + restore buffer 的确定性时序 |
 | Terminal 业务逻辑写进 `components/chats/` | 放 `components/terminal/` 和 `hooks/terminal/` |

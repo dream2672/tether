@@ -1,8 +1,8 @@
 export type ChatRestorePlanStep =
   | { type: 'release-subscription'; sessionId: string }
   | { type: 'create-attempt'; sessionId: string }
-  | { type: 'subscribe'; after: 0; sessionId: string }
   | { type: 'load-snapshot'; sessionId: string }
+  | { type: 'subscribe'; after: 0; sessionId: string }
   | { type: 'load-catchup'; after: number; sessionId: string }
   | { type: 'drain-buffer'; sessionId: string };
 
@@ -15,6 +15,7 @@ export function planEnterSessionRestore(input: {
       ? [{ type: 'release-subscription' as const, sessionId: input.previousSessionId }]
       : []),
     { type: 'create-attempt', sessionId: input.sessionId },
+    { type: 'load-snapshot', sessionId: input.sessionId },
     { type: 'subscribe', sessionId: input.sessionId, after: 0 }
   ];
 }

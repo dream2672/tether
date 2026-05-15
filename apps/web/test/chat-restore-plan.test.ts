@@ -4,11 +4,12 @@ import {
   planEnterSessionRestore,
   planReconnectRestore,
   planSnapshotCatchup
-} from '../src/components/chats/chat-restore-plan.js';
+} from '../src/components/chats/flow/chat-restore-plan.js';
 
-test('planEnterSessionRestore subscribes with after=0 for initial restore', () => {
+test('planEnterSessionRestore starts server snapshot before live subscribe', () => {
   assert.deepEqual(planEnterSessionRestore({ sessionId: 's1' }), [
     { type: 'create-attempt', sessionId: 's1' },
+    { type: 'load-snapshot', sessionId: 's1' },
     { type: 'subscribe', sessionId: 's1', after: 0 }
   ]);
 });
@@ -17,6 +18,7 @@ test('planEnterSessionRestore releases previous subscription when switching sess
   assert.deepEqual(planEnterSessionRestore({ previousSessionId: 'a', sessionId: 'b' }), [
     { type: 'release-subscription', sessionId: 'a' },
     { type: 'create-attempt', sessionId: 'b' },
+    { type: 'load-snapshot', sessionId: 'b' },
     { type: 'subscribe', sessionId: 'b', after: 0 }
   ]);
 });
@@ -32,6 +34,7 @@ test('planSnapshotCatchup loads catch-up after snapshotEventSeq then drains buff
 test('planReconnectRestore reuses enter-session restore steps', () => {
   assert.deepEqual(planReconnectRestore('s1'), [
     { type: 'create-attempt', sessionId: 's1' },
+    { type: 'load-snapshot', sessionId: 's1' },
     { type: 'subscribe', sessionId: 's1', after: 0 }
   ]);
 });

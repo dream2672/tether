@@ -6,12 +6,13 @@ import {
   createSubscriptionAckWait,
   DEFAULT_SUBSCRIPTION_ACK_TIMEOUT_MS,
   expireSubscriptionAckWait,
+  shouldApplyGatewayUnavailable,
   shouldAcceptLiveFrame,
   shouldApplyAsyncRestoreResult,
   shouldApplyRestoreAttempt,
   shouldReleaseSubscription,
   shouldStartRestore
-} from '../src/components/chats/chat-session-guards.js';
+} from '../src/components/chats/flow/chat-session-guards.js';
 
 test('createRestoreAttempt creates stable session-scoped attempt metadata', () => {
   assert.deepEqual(createRestoreAttempt('s1', 100), {
@@ -123,4 +124,10 @@ test('shouldStartRestore requires auth, metadata, and session id', () => {
   assert.equal(shouldStartRestore({ authReady: false, metadataReady: true, sessionId: 's1' }), false);
   assert.equal(shouldStartRestore({ authReady: true, metadataReady: false, sessionId: 's1' }), false);
   assert.equal(shouldStartRestore({ authReady: true, metadataReady: true, sessionId: undefined }), false);
+});
+
+test('shouldApplyGatewayUnavailable only applies session-scoped errors to the active session', () => {
+  assert.equal(shouldApplyGatewayUnavailable({ activeSessionId: 's1', frameSessionId: 's1' }), true);
+  assert.equal(shouldApplyGatewayUnavailable({ activeSessionId: 's1', frameSessionId: 's2' }), false);
+  assert.equal(shouldApplyGatewayUnavailable({ activeSessionId: 's1', frameSessionId: undefined }), true);
 });

@@ -4,7 +4,7 @@ import {
   shouldApplyRequestResult,
   shouldApplySessionResult,
   shouldClearSessionViewState
-} from '../src/components/chats/session-switch-guards.js';
+} from '../src/components/chats/flow/session-switch-guards.js';
 
 test('shouldApplySessionResult: accepts the response for the current session', () => {
   assert.equal(shouldApplySessionResult('session-b', 'session-b'), true);

@@ -19,6 +19,8 @@ import { applyChatStreamEvent, applyChatStreamEvents, historySnapshotToReducerSt
 import { mapRelayFrameToChatEvent, mapStructuredCatchupResponse } from './events/chat-event-mappers.js';
 import { createClientRequestId, createOptimisticTurn } from './flow/chat-create-flow.js';
 import { bufferLiveEvent, createRestoreBuffer, drainBufferedEvents, type ChatRestoreBuffer } from './flow/chat-restore-buffer.js';
+import { shouldApplyGatewayUnavailable } from './flow/chat-session-guards.js';
+import { shouldClearSessionViewState } from './flow/session-switch-guards.js';
 import { ChatHeader } from './shell/chat-header.js';
 import { ChatComposer } from './composer/chat-composer.js';
 import { ChatMessageList } from './shell/chat-message-list.js';
@@ -180,6 +182,8 @@ export function ChatPanel({
   const lastAppliedEventSeqRef = React.useRef(0);
   const lastSubscriptionAckKeyRef = React.useRef<string | null>(null);
   const restoreBufferRef = React.useRef<ChatRestoreBuffer | null>(null);
+  const restoreAttemptIdRef = React.useRef<string | null>(null);
+  const restoreAttemptSeqRef = React.useRef(0);
 
   const relay = useRelayClient();
   const {
@@ -301,7 +305,10 @@ export function ChatPanel({
     }
     setSessionAccessError(undefined);
     setRestoreError(undefined);
-    setIsRestoring(false);
+    setIsRestoring(Boolean(activeSessionId));
+    restoreAttemptIdRef.current = activeSessionId
+      ? `restore-${activeSessionId}-${++restoreAttemptSeqRef.current}`
+      : null;
     currentSessionIdRef.current = activeSessionId;
     setCurrentSessionId(activeSessionId);
     setAgentSessionId(undefined);
@@ -313,6 +320,7 @@ export function ChatPanel({
       setActiveSessionModel(pendingSessionModelRef.current);
       setActiveSessionGatewayId(selectedGatewayId);
       setActiveSessionMetadataReady(true);
+      setIsRestoring(false);
       createdSessionIdRef.current = null;
     } else {
       setActiveSessionProvider(undefined);
@@ -320,15 +328,27 @@ export function ChatPanel({
     }
   }, [activeSessionId]);
 
-  const loadActiveSessionHistory = React.useCallback(async (sessionId: string, opts?: { protectNewerLocal?: boolean }) => {
+  const loadActiveSessionHistory = React.useCallback(async (sessionId: string, opts?: { protectNewerLocal?: boolean; restoreAttemptId?: string }) => {
     const token = normalAuth?.accessToken ?? getStoredNormalAccessToken();
     const { messages: historyMessages, snapshotEventSeq } = await fetchChatMessages(sessionId, token);
+    if (
+      sessionId !== currentSessionIdRef.current ||
+      (opts?.restoreAttemptId && opts.restoreAttemptId !== restoreAttemptIdRef.current)
+    ) {
+      return false;
+    }
     const reducerState = historySnapshotToReducerState(historyMessages, activeSessionProviderRef.current ?? 'agent', snapshotEventSeq);
     const catchupEvents = mapStructuredCatchupResponse({
       events: await fetchChatEventsAfter(sessionId, snapshotEventSeq, token),
       provider: activeSessionProviderRef.current ?? 'agent',
       sessionId
     });
+    if (
+      sessionId !== currentSessionIdRef.current ||
+      (opts?.restoreAttemptId && opts.restoreAttemptId !== restoreAttemptIdRef.current)
+    ) {
+      return false;
+    }
     const buffer = restoreBufferRef.current;
     const drained = buffer?.sessionId === sessionId
       ? drainBufferedEvents({ buffer, catchupEvents, snapshotEventSeq })
@@ -343,7 +363,7 @@ export function ChatPanel({
       messagesRef.current.some((item) => item.kind === 'agent' && item.isWaiting && item.id.startsWith('agent-'));
     if (shouldKeepPendingOptimistic) {
       lastAppliedEventSeqRef.current = Math.max(lastAppliedEventSeqRef.current, snapshotEventSeq);
-      return;
+      return true;
     }
     const items = reducerState.messages;
     let nextIsInflight = false;
@@ -356,14 +376,21 @@ export function ChatPanel({
     setIsInflight(nextIsInflight || nextState.messages.some((item) => item.kind === 'agent' && (item.isWaiting || item.isStreaming)));
     setUsageStats(usageStatsFromHistory(historyMessages));
     setMessages(nextState.messages);
+    return true;
   }, [normalAuth?.accessToken]);
 
-  const loadActiveSessionMetadata = React.useCallback(async (sessionId: string) => {
+  const loadActiveSessionMetadata = React.useCallback(async (sessionId: string, opts?: { restoreAttemptId?: string }) => {
     const token = normalAuth?.accessToken ?? getStoredNormalAccessToken();
     if (!token) {
-      return;
+      return false;
     }
     const sessions = await fetchChatSessions(token);
+    if (
+      sessionId !== currentSessionIdRef.current ||
+      (opts?.restoreAttemptId && opts.restoreAttemptId !== restoreAttemptIdRef.current)
+    ) {
+      return false;
+    }
     const session = sessions.find((item) => item.id === sessionId);
     setAgentSessionId(session?.agentSessionId);
     setActiveSessionProvider(session?.provider);
@@ -371,6 +398,7 @@ export function ChatPanel({
     setActiveSessionGatewayId(session?.gatewayId);
     setActiveSessionModel(undefined);
     setActiveSessionMetadataReady(true);
+    return true;
   }, [normalAuth?.accessToken]);
 
   React.useEffect(() => {
@@ -400,6 +428,7 @@ export function ChatPanel({
   React.useEffect(() => {
     if (!activeSessionId) {
       setMessages([]);
+      setUsageStats(undefined);
       setIsInflight(false);
       setRestoreError(undefined);
       setIsRestoring(false);
@@ -410,6 +439,8 @@ export function ChatPanel({
       return;
     }
     lastSubscriptionAckKeyRef.current = null;
+    const restoreAttemptId = restoreAttemptIdRef.current ?? `restore-${activeSessionId}-${++restoreAttemptSeqRef.current}`;
+    restoreAttemptIdRef.current = restoreAttemptId;
     if (
       skipNextHistoryLoadSessionIdRef.current === activeSessionId ||
       pendingCreatedSessionIdRef.current === activeSessionId
@@ -417,13 +448,49 @@ export function ChatPanel({
       skipNextHistoryLoadSessionIdRef.current = null;
       return;
     }
-  }, [activeSessionId]);
+    if (shouldClearSessionViewState({
+      activeSessionId,
+      pendingCreatedSessionId: pendingCreatedSessionIdRef.current,
+      skipNextHistoryLoadSessionId: skipNextHistoryLoadSessionIdRef.current
+    })) {
+      setMessages([]);
+      setUsageStats(undefined);
+      setIsInflight(false);
+      lastAppliedEventSeqRef.current = 0;
+      restoreBufferRef.current = null;
+    }
+    setIsRestoring(true);
+    void loadActiveSessionHistory(activeSessionId, { restoreAttemptId })
+      .then((applied) => {
+        if (!applied || restoreAttemptIdRef.current !== restoreAttemptId) return;
+        setRestoreError(undefined);
+      })
+      .catch(() => {
+        if (restoreAttemptIdRef.current !== restoreAttemptId || currentSessionIdRef.current !== activeSessionId) return;
+        restoreBufferRef.current = null;
+        setRestoreError(t.chatsHistoryFail);
+        setMessages((items) => [
+          ...items,
+          { kind: 'system', id: `history-error-${Date.now()}`, text: t.chatsHistoryFail }
+        ]);
+      })
+      .finally(() => {
+        if (restoreAttemptIdRef.current === restoreAttemptId) {
+          setIsRestoring(false);
+        }
+      });
+  }, [activeSessionId, loadActiveSessionHistory, t.chatsHistoryFail]);
 
   React.useEffect(() => {
     if (!activeSessionId) {
       return;
     }
-    void loadActiveSessionMetadata(activeSessionId).catch(() => setActiveSessionMetadataReady(true));
+    const restoreAttemptId = restoreAttemptIdRef.current ?? undefined;
+    void loadActiveSessionMetadata(activeSessionId, { restoreAttemptId }).catch(() => {
+      if (currentSessionIdRef.current === activeSessionId && restoreAttemptIdRef.current === restoreAttemptId) {
+        setActiveSessionMetadataReady(true);
+      }
+    });
   }, [activeSessionId, loadActiveSessionMetadata]);
 
   const handleRelayClose = React.useCallback(() => {
@@ -553,20 +620,6 @@ export function ChatPanel({
         }
         lastSubscriptionAckKeyRef.current = ackKey;
         setRestoreError(undefined);
-        setIsRestoring(true);
-        void loadActiveSessionHistory(frame.sessionId, { protectNewerLocal: true })
-          .then(() => {
-            setRestoreError(undefined);
-          })
-          .catch(() => {
-            restoreBufferRef.current = null;
-            setRestoreError(t.chatsHistoryFail);
-            setMessages((items) => [
-              ...items,
-              { kind: 'system', id: `history-error-${Date.now()}`, text: t.chatsHistoryFail }
-            ]);
-          })
-          .finally(() => setIsRestoring(false));
         return;
       }
       if (frame.type === 'event' && typeof frame.event === 'object' && frame.event) {
@@ -671,6 +724,12 @@ export function ChatPanel({
           frame.code === 'forbidden' ||
           frame.code === 'wrong_ticket_scope'
         ) {
+          if (!shouldApplyGatewayUnavailable({
+            activeSessionId: currentSessionIdRef.current,
+            frameSessionId: typeof frame.sessionId === 'string' ? frame.sessionId : undefined
+          })) {
+            return;
+          }
           if (frame.code === 'forbidden' && frameMessage === 'session is outside client scope') {
             setSessionAccessError(t.chatsSessionOutsideGateway);
           } else {
@@ -709,7 +768,7 @@ export function ChatPanel({
           setIsInflight(false);
         }
       }
-  }, [clearGatewayNotConnectedError, connectionEpoch, handleStructuredEvent, loadActiveSessionHistory, navigate, selectedGatewayId, t.chatsHistoryFail, t.chatsProviderFail, t.chatsSessionOutsideGateway, t.chatsSessionStarted, t.gatewayNotConnected, t.gatewaySelectorNoSelection]);
+  }, [clearGatewayNotConnectedError, connectionEpoch, handleStructuredEvent, navigate, selectedGatewayId, t.chatsProviderFail, t.chatsSessionOutsideGateway, t.chatsSessionStarted, t.gatewayNotConnected, t.gatewaySelectorNoSelection]);
 
   React.useEffect(() => subscribeFrame(handleRelayFrame), [handleRelayFrame, subscribeFrame]);
   React.useEffect(() => subscribeClose(handleRelayClose), [handleRelayClose, subscribeClose]);
@@ -739,8 +798,30 @@ export function ChatPanel({
       return;
     }
     lastSubscriptionAckKeyRef.current = null;
-    void loadActiveSessionMetadata(sessionId).catch(() => setActiveSessionMetadataReady(true));
-  }, [connectionEpoch, loadActiveSessionMetadata, onReconnectCatchup, wsReady]);
+    const restoreAttemptId = `restore-${sessionId}-${++restoreAttemptSeqRef.current}`;
+    restoreAttemptIdRef.current = restoreAttemptId;
+    setIsRestoring(true);
+    void loadActiveSessionMetadata(sessionId, { restoreAttemptId }).catch(() => {
+      if (restoreAttemptIdRef.current === restoreAttemptId && currentSessionIdRef.current === sessionId) {
+        setActiveSessionMetadataReady(true);
+      }
+    });
+    void loadActiveSessionHistory(sessionId, { protectNewerLocal: true, restoreAttemptId })
+      .then((applied) => {
+        if (!applied || restoreAttemptIdRef.current !== restoreAttemptId) return;
+        setRestoreError(undefined);
+      })
+      .catch(() => {
+        if (restoreAttemptIdRef.current !== restoreAttemptId || currentSessionIdRef.current !== sessionId) return;
+        restoreBufferRef.current = null;
+        setRestoreError(t.chatsHistoryFail);
+      })
+      .finally(() => {
+        if (restoreAttemptIdRef.current === restoreAttemptId) {
+          setIsRestoring(false);
+        }
+      });
+  }, [connectionEpoch, loadActiveSessionHistory, loadActiveSessionMetadata, onReconnectCatchup, t.chatsHistoryFail, wsReady]);
 
   React.useEffect(() => {
     if (!cwdPickerOpen || currentSessionId || !wsReady || !selectedGatewayId) {
@@ -822,10 +903,12 @@ export function ChatPanel({
       return;
     }
     setSessionAccessError(undefined);
-    restoreBufferRef.current = createRestoreBuffer({
-      attemptId: `restore-${currentSessionId}-${connectionEpoch}`,
-      sessionId: currentSessionId
-    });
+    restoreBufferRef.current = isRestoring
+      ? createRestoreBuffer({
+          attemptId: restoreAttemptIdRef.current ?? `restore-${currentSessionId}-${connectionEpoch}`,
+          sessionId: currentSessionId
+        })
+      : null;
     releaseSessionSubscriptionRef.current = acquireSessionSubscription({
       owner: `chat:${currentSessionId}`,
       sessionId: currentSessionId,
@@ -833,7 +916,7 @@ export function ChatPanel({
       after: 0
     });
     subscribedSessionIdRef.current = currentSessionId;
-  }, [acquireSessionSubscription, activeSessionMetadataReady, connectionEpoch, currentSessionId, wsReady, subscribeRetryKey]);
+  }, [acquireSessionSubscription, activeSessionMetadataReady, connectionEpoch, currentSessionId, isRestoring, wsReady, subscribeRetryKey]);
 
   React.useEffect(() => {
     return () => {
@@ -851,15 +934,37 @@ export function ChatPanel({
     if (!sessionId) {
       return;
     }
+    const restoreAttemptId = `restore-${sessionId}-${++restoreAttemptSeqRef.current}`;
+    restoreAttemptIdRef.current = restoreAttemptId;
     releaseSessionSubscriptionRef.current?.();
     releaseSessionSubscriptionRef.current = null;
     subscribedSessionIdRef.current = null;
     restoreBufferRef.current = null;
     lastSubscriptionAckKeyRef.current = null;
     setRestoreError(undefined);
-    setIsRestoring(false);
+    setIsRestoring(true);
+    void loadActiveSessionMetadata(sessionId, { restoreAttemptId }).catch(() => {
+      if (restoreAttemptIdRef.current === restoreAttemptId && currentSessionIdRef.current === sessionId) {
+        setActiveSessionMetadataReady(true);
+      }
+    });
+    void loadActiveSessionHistory(sessionId, { restoreAttemptId })
+      .then((applied) => {
+        if (!applied || restoreAttemptIdRef.current !== restoreAttemptId) return;
+        setRestoreError(undefined);
+      })
+      .catch(() => {
+        if (restoreAttemptIdRef.current !== restoreAttemptId || currentSessionIdRef.current !== sessionId) return;
+        restoreBufferRef.current = null;
+        setRestoreError(t.chatsHistoryFail);
+      })
+      .finally(() => {
+        if (restoreAttemptIdRef.current === restoreAttemptId) {
+          setIsRestoring(false);
+        }
+      });
     setSubscribeRetryKey((key) => key + 1);
-  }, []);
+  }, [loadActiveSessionHistory, loadActiveSessionMetadata, t.chatsHistoryFail]);
 
   const sendMessage = React.useCallback(() => {
     const text = inputText.trim();

@@ -4,8 +4,8 @@ import {
   createOptimisticTurn,
   reconcileOptimisticTurn,
   rollbackOptimisticTurn
-} from '../src/components/chats/chat-create-flow.js';
-import type { MessageItem } from '../src/components/chats/chat-types.js';
+} from '../src/components/chats/flow/chat-create-flow.js';
+import type { MessageItem } from '../src/components/chats/model/chat-types.js';
 
 test('createOptimisticTurn creates paired user and waiting assistant by clientRequestId', () => {
   const turn = createOptimisticTurn({

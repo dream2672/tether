@@ -7,7 +7,7 @@ import {
   historySnapshotToReducerState,
   stateFromSnapshot,
   type ChatStreamEvent
-} from '../src/components/chats/chat-event-reducer.js';
+} from '../src/components/chats/events/chat-event-reducer.js';
 
 function agentTexts(state: ReturnType<typeof createChatEventReducerState>): string[] {
   return state.messages

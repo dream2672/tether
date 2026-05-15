@@ -10,7 +10,7 @@ import {
   parseClientRequestId,
   parseEventSeq,
   parseTurnId
-} from '../src/components/chats/chat-event-mappers.js';
+} from '../src/components/chats/events/chat-event-mappers.js';
 
 test('mapHistoryResponseToSnapshot preserves snapshotEventSeq and messages', () => {
   const snapshot = mapHistoryResponseToSnapshot({
